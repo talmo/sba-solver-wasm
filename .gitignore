@@ -1,0 +1,28 @@
+# Scratch/exploration files
+scratch/
+
+# Build artifacts
+target/
+pkg/
+
+# Node
+node_modules/
+package-lock.json
+
+# Playwright
+playwright-report/
+test-results/
+.playwright-mcp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

@@ -1,0 +1,26 @@
+{
+  "name": "apex-solver-wasm",
+  "version": "0.1.0",
+  "description": "WebAssembly module for sparse bundle adjustment",
+  "type": "module",
+  "scripts": {
+    "build": "wasm-pack build --target web --release",
+    "build:dev": "wasm-pack build --target web --dev",
+    "serve": "npx serve . -p 8080",
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug",
+    "test:ui": "npx playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "serve": "^14.2.0"
+  },
+  "keywords": [
+    "wasm",
+    "bundle-adjustment",
+    "photogrammetry",
+    "calibration"
+  ],
+  "license": "Apache-2.0"
+}

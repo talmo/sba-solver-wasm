@@ -1,0 +1,49 @@
+[package]
+name = "apex-solver-wasm"
+version = "0.1.0"
+edition = "2024"
+authors = ["Your Name"]
+description = "WebAssembly module for sparse bundle adjustment using apex-solver"
+license = "Apache-2.0"
+repository = "https://github.com/your-repo/apex-solver-wasm"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["console_error_panic_hook"]
+console_error_panic_hook = ["dep:console_error_panic_hook"]
+
+[dependencies]
+# Core solver - use local fork with WASM-compatible feature flags
+apex-solver = { path = "./apex-solver-fork", default-features = false }
+
+# Linear algebra (same version as apex-solver)
+nalgebra = "0.33"
+
+# WASM bindings
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+
+# Serialization for JS interop
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde-wasm-bindgen = "0.6"
+
+# RNG support in WASM (needed for some algorithms)
+# getrandom 0.2 is pulled in by other deps - configure for WASM via .cargo/config.toml
+getrandom = { version = "0.2", features = ["js"] }
+# getrandom 0.3 needs different config
+getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+
+# Better panic messages in browser console
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+# Reduce WASM size
+codegen-units = 1

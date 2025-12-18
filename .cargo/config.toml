@@ -1,0 +1,6 @@
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128", "--cfg", "getrandom_backend=\"wasm_js\""]
+
+[build]
+# Default target for wasm-pack builds
+# target = "wasm32-unknown-unknown"

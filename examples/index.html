@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>apex-solver-wasm Demo</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007acc;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #555;
+            margin-top: 30px;
+        }
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 800px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        button {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 5px 10px 0;
+        }
+        button:hover {
+            background: #005a9e;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background: #6c757d;
+        }
+        button.secondary:hover {
+            background: #545b62;
+        }
+        #status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        #status.loading {
+            background: #fff3cd;
+            color: #856404;
+        }
+        #status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        #status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        #result {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            white-space: pre-wrap;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow: auto;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+        .stat {
+            background: #e9ecef;
+            padding: 10px 15px;
+            border-radius: 4px;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #555;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>apex-solver-wasm Demo</h1>
+    <p>Browser-based sparse bundle adjustment using WebAssembly</p>
+
+    <div id="status" class="loading">Loading WASM module...</div>
+
+    <div class="section">
+        <h2>Quick Test</h2>
+        <p>Run a simple bundle adjustment with synthetic data (2 cameras, 8 3D points).</p>
+        <button id="runTest" disabled>Run Test Optimization</button>
+        <button id="loadExample" class="secondary" disabled>Load Example Data</button>
+    </div>
+
+    <div class="section">
+        <h2>Solver Configuration</h2>
+        <div class="grid">
+            <div class="form-group">
+                <label for="maxIterations">Max Iterations</label>
+                <input type="number" id="maxIterations" value="100" min="1" max="1000">
+            </div>
+            <div class="form-group">
+                <label for="costTolerance">Cost Tolerance</label>
+                <input type="number" id="costTolerance" value="1e-6" step="1e-7">
+            </div>
+            <div class="form-group">
+                <label for="robustLoss">Robust Loss</label>
+                <select id="robustLoss" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px;">
+                    <option value="huber">Huber</option>
+                    <option value="cauchy">Cauchy</option>
+                    <option value="none">None</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="robustLossParam">Robust Loss Parameter</label>
+                <input type="number" id="robustLossParam" value="1.0" step="0.1">
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Input Data</h2>
+        <div class="grid">
+            <div>
+                <label for="camerasInput">Cameras (JSON)</label>
+                <textarea id="camerasInput" placeholder="Paste cameras JSON here..."></textarea>
+            </div>
+            <div>
+                <label for="pointsInput">3D Points (JSON)</label>
+                <textarea id="pointsInput" placeholder="Paste points JSON here..."></textarea>
+            </div>
+        </div>
+        <div>
+            <label for="observationsInput">Observations (JSON)</label>
+            <textarea id="observationsInput" placeholder="Paste observations JSON here..."></textarea>
+        </div>
+        <button id="runCustom" disabled>Run Custom Optimization</button>
+    </div>
+
+    <div class="section">
+        <h2>Results</h2>
+        <div class="stats" id="stats" style="display: none;">
+            <div class="stat">
+                <div class="stat-label">Initial Cost</div>
+                <div class="stat-value" id="initialCost">-</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Final Cost</div>
+                <div class="stat-value" id="finalCost">-</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Iterations</div>
+                <div class="stat-value" id="iterations">-</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Converged</div>
+                <div class="stat-value" id="converged">-</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Time</div>
+                <div class="stat-value" id="time">-</div>
+            </div>
+        </div>
+        <label for="result">Full Result (JSON)</label>
+        <div id="result">No results yet. Run an optimization to see results.</div>
+    </div>
+
+    <script type="module">
+        import init, { WasmBundleAdjuster } from '../pkg/apex_solver_wasm.js';
+
+        let ba = null;
+
+        // Generate synthetic test data
+        function generateTestData() {
+            // Two cameras looking at a cube of points
+            const cameras = [
+                {
+                    // Camera 0: at origin, looking along +Z
+                    rotation: [1.0, 0.0, 0.0, 0.0], // identity quaternion [w,x,y,z]
+                    translation: [0.0, 0.0, 0.0],
+                    focal: [500.0, 500.0],
+                    principal: [320.0, 240.0],
+                    distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
+                },
+                {
+                    // Camera 1: translated to the right, slight rotation
+                    rotation: [0.9962, 0.0, 0.0872, 0.0], // ~10 deg rotation around Y
+                    translation: [1.0, 0.0, 0.0],
+                    focal: [500.0, 500.0],
+                    principal: [320.0, 240.0],
+                    distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
+                }
+            ];
+
+            // 8 points forming a cube at z=5
+            const points = [
+                [-0.5, -0.5, 5.0],
+                [ 0.5, -0.5, 5.0],
+                [ 0.5,  0.5, 5.0],
+                [-0.5,  0.5, 5.0],
+                [-0.5, -0.5, 6.0],
+                [ 0.5, -0.5, 6.0],
+                [ 0.5,  0.5, 6.0],
+                [-0.5,  0.5, 6.0]
+            ];
+
+            // Generate observations by projecting points through cameras
+            const observations = [];
+
+            for (let camIdx = 0; camIdx < cameras.length; camIdx++) {
+                const cam = cameras[camIdx];
+                const q = cam.rotation;
+                const t = cam.translation;
+
+                // Convert quaternion to rotation matrix (simplified for small rotations)
+                const qw = q[0], qx = q[1], qy = q[2], qz = q[3];
+
+                for (let ptIdx = 0; ptIdx < points.length; ptIdx++) {
+                    const pt = points[ptIdx];
+
+                    // Transform point to camera coordinates (R * p + t)
+                    // Using quaternion rotation
+                    const px = pt[0], py = pt[1], pz = pt[2];
+
+                    // Quaternion rotation: q * p * q^(-1)
+                    // For unit quaternion: R = [[1-2(qy²+qz²), 2(qxqy-qzqw), 2(qxqz+qyqw)],
+                    //                          [2(qxqy+qzqw), 1-2(qx²+qz²), 2(qyqz-qxqw)],
+                    //                          [2(qxqz-qyqw), 2(qyqz+qxqw), 1-2(qx²+qy²)]]
+                    const r00 = 1 - 2*(qy*qy + qz*qz);
+                    const r01 = 2*(qx*qy - qz*qw);
+                    const r02 = 2*(qx*qz + qy*qw);
+                    const r10 = 2*(qx*qy + qz*qw);
+                    const r11 = 1 - 2*(qx*qx + qz*qz);
+                    const r12 = 2*(qy*qz - qx*qw);
+                    const r20 = 2*(qx*qz - qy*qw);
+                    const r21 = 2*(qy*qz + qx*qw);
+                    const r22 = 1 - 2*(qx*qx + qy*qy);
+
+                    const camX = r00*px + r01*py + r02*pz + t[0];
+                    const camY = r10*px + r11*py + r12*pz + t[1];
+                    const camZ = r20*px + r21*py + r22*pz + t[2];
+
+                    // Project to image
+                    const u = cam.focal[0] * (camX / camZ) + cam.principal[0];
+                    const v = cam.focal[1] * (camY / camZ) + cam.principal[1];
+
+                    // Add small noise to simulate real observations
+                    const noise = 0.5;
+                    observations.push({
+                        camera_idx: camIdx,
+                        point_idx: ptIdx,
+                        x: u + (Math.random() - 0.5) * noise,
+                        y: v + (Math.random() - 0.5) * noise
+                    });
+                }
+            }
+
+            // Add noise to initial point estimates (what we'll optimize)
+            const noisyPoints = points.map(pt => [
+                pt[0] + (Math.random() - 0.5) * 0.2,
+                pt[1] + (Math.random() - 0.5) * 0.2,
+                pt[2] + (Math.random() - 0.5) * 0.2
+            ]);
+
+            return { cameras, points: noisyPoints, observations };
+        }
+
+        function getConfig() {
+            return {
+                max_iterations: parseInt(document.getElementById('maxIterations').value),
+                cost_tolerance: parseFloat(document.getElementById('costTolerance').value),
+                parameter_tolerance: 1e-8,
+                gradient_tolerance: 1e-10,
+                robust_loss: document.getElementById('robustLoss').value,
+                robust_loss_param: parseFloat(document.getElementById('robustLossParam').value),
+                optimize_extrinsics: true,
+                optimize_points: true
+            };
+        }
+
+        function setStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = type;
+        }
+
+        function displayResult(result, elapsed) {
+            const data = JSON.parse(result);
+
+            document.getElementById('stats').style.display = 'flex';
+            document.getElementById('initialCost').textContent = data.initial_cost.toExponential(4);
+            document.getElementById('finalCost').textContent = data.final_cost.toExponential(4);
+            document.getElementById('iterations').textContent = data.iterations;
+            document.getElementById('converged').textContent = data.converged ? 'Yes' : 'No';
+            document.getElementById('time').textContent = elapsed.toFixed(1) + ' ms';
+
+            document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+        }
+
+        async function runOptimization(cameras, points, observations) {
+            try {
+                setStatus('Running optimization...', 'loading');
+
+                ba.set_cameras(JSON.stringify(cameras));
+                ba.set_points(JSON.stringify(points));
+                ba.set_observations(JSON.stringify(observations));
+                ba.set_config(JSON.stringify(getConfig()));
+
+                console.log(`Cameras: ${ba.num_cameras()}, Points: ${ba.num_points()}, Observations: ${ba.num_observations()}`);
+
+                const startTime = performance.now();
+                const result = ba.optimize();
+                const elapsed = performance.now() - startTime;
+
+                displayResult(result, elapsed);
+                setStatus('Optimization complete!', 'success');
+
+            } catch (error) {
+                setStatus(`Error: ${error}`, 'error');
+                console.error(error);
+            }
+        }
+
+        // Initialize WASM module
+        async function main() {
+            try {
+                await init();
+                ba = new WasmBundleAdjuster();
+
+                setStatus('WASM module loaded successfully!', 'success');
+
+                document.getElementById('runTest').disabled = false;
+                document.getElementById('loadExample').disabled = false;
+                document.getElementById('runCustom').disabled = false;
+
+            } catch (error) {
+                setStatus(`Failed to load WASM: ${error}`, 'error');
+                console.error(error);
+            }
+        }
+
+        // Event handlers
+        document.getElementById('runTest').addEventListener('click', () => {
+            const { cameras, points, observations } = generateTestData();
+            runOptimization(cameras, points, observations);
+        });
+
+        document.getElementById('loadExample').addEventListener('click', () => {
+            const { cameras, points, observations } = generateTestData();
+            document.getElementById('camerasInput').value = JSON.stringify(cameras, null, 2);
+            document.getElementById('pointsInput').value = JSON.stringify(points, null, 2);
+            document.getElementById('observationsInput').value = JSON.stringify(observations, null, 2);
+        });
+
+        document.getElementById('runCustom').addEventListener('click', () => {
+            try {
+                const cameras = JSON.parse(document.getElementById('camerasInput').value);
+                const points = JSON.parse(document.getElementById('pointsInput').value);
+                const observations = JSON.parse(document.getElementById('observationsInput').value);
+                runOptimization(cameras, points, observations);
+            } catch (error) {
+                setStatus(`Invalid JSON input: ${error}`, 'error');
+            }
+        });
+
+        main();
+    </script>
+</body>
+</html>
