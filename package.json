@@ -4,8 +4,9 @@
   "description": "WebAssembly module for sparse bundle adjustment (camera calibration refinement)",
   "type": "module",
   "scripts": {
-    "build": "wasm-pack build --target web --release --scope talmolab",
-    "build:dev": "wasm-pack build --target web --dev --scope talmolab",
+    "build": "wasm-pack build --target web --release --scope talmolab && node scripts/postbuild.js",
+    "build:dev": "wasm-pack build --target web --dev --scope talmolab && node scripts/postbuild.js",
+    "postbuild": "node scripts/postbuild.js",
     "serve": "npx serve . -p 8080",
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",

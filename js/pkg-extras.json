@@ -1,0 +1,21 @@
+{
+  "exports": {
+    ".": {
+      "import": "./sba_solver_wasm.js",
+      "types": "./sba_solver_wasm.d.ts"
+    },
+    "./wrapper": {
+      "import": "./wrapper.js"
+    }
+  },
+  "keywords": [
+    "wasm",
+    "webassembly",
+    "bundle-adjustment",
+    "photogrammetry",
+    "calibration",
+    "camera",
+    "computer-vision",
+    "3d-reconstruction"
+  ]
+}

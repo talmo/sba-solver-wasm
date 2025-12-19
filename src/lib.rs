@@ -1180,6 +1180,451 @@ impl Default for WasmBundleAdjuster {
 }
 
 // ============================================================================
+// Triangulation API
+// ============================================================================
+
+/// A 2D observation for triangulation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriangulationObservation {
+    /// Index of the camera that made this observation
+    pub camera_idx: usize,
+    /// Observed x coordinate in image (pixels)
+    pub x: f64,
+    /// Observed y coordinate in image (pixels)
+    pub y: f64,
+}
+
+/// Result of triangulating a single 3D point.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriangulationResult {
+    /// Triangulated 3D point [x, y, z]
+    pub point: [f64; 3],
+    /// RMS reprojection error in pixels
+    pub reprojection_error: f64,
+    /// Number of observations used
+    pub num_observations: usize,
+}
+
+/// Result of batch triangulation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchTriangulationResult {
+    /// Triangulated 3D points
+    pub points: Vec<[f64; 3]>,
+    /// RMS reprojection error per point
+    pub reprojection_errors: Vec<f64>,
+    /// Number of successfully triangulated points
+    pub num_triangulated: usize,
+    /// Indices of points that failed triangulation
+    pub failed_indices: Vec<usize>,
+}
+
+/// Triangulate a single 3D point from multiple 2D observations using DLT.
+///
+/// Uses the Direct Linear Transform algorithm with SVD to find the 3D point
+/// that minimizes algebraic error.
+fn triangulate_point_dlt(
+    observations: &[TriangulationObservation],
+    cameras: &[CameraParams],
+) -> Option<TriangulationResult> {
+    if observations.len() < 2 {
+        return None;
+    }
+
+    // Build the DLT matrix A (2n x 4) where n is number of observations
+    let n = observations.len();
+    let mut a_data = Vec::with_capacity(2 * n * 4);
+
+    for obs in observations {
+        if obs.camera_idx >= cameras.len() {
+            return None;
+        }
+        let cam = &cameras[obs.camera_idx];
+
+        // Build 3x4 projection matrix P = K @ [R | t]
+        let r = cam.rotation_quat().to_rotation_matrix();
+        let t = cam.translation_vec();
+
+        let fx = cam.focal[0];
+        let fy = cam.focal[1];
+        let cx = cam.principal[0];
+        let cy = cam.principal[1];
+
+        // P = K @ [R | t]
+        // K = [[fx, 0, cx], [0, fy, cy], [0, 0, 1]]
+        let r_mat = r.matrix();
+
+        // P is 3x4: [K*R | K*t]
+        let mut p = [[0.0f64; 4]; 3];
+        for i in 0..3 {
+            for j in 0..3 {
+                p[i][j] = if i == 0 {
+                    fx * r_mat[(0, j)] + cx * r_mat[(2, j)]
+                } else if i == 1 {
+                    fy * r_mat[(1, j)] + cy * r_mat[(2, j)]
+                } else {
+                    r_mat[(2, j)]
+                };
+            }
+            p[i][3] = if i == 0 {
+                fx * t[0] + cx * t[2]
+            } else if i == 1 {
+                fy * t[1] + cy * t[2]
+            } else {
+                t[2]
+            };
+        }
+
+        // Two rows per observation:
+        // Row 1: u * P[2,:] - P[0,:]
+        // Row 2: v * P[2,:] - P[1,:]
+        let u = obs.x;
+        let v = obs.y;
+
+        // Row 1
+        for j in 0..4 {
+            a_data.push(u * p[2][j] - p[0][j]);
+        }
+        // Row 2
+        for j in 0..4 {
+            a_data.push(v * p[2][j] - p[1][j]);
+        }
+    }
+
+    // Create matrix A and compute SVD
+    let a = DMatrix::from_row_slice(2 * n, 4, &a_data);
+    let svd = a.svd(false, true);
+
+    // Get the last column of V (corresponding to smallest singular value)
+    let v_t = svd.v_t?;
+    let last_row = v_t.row(3);
+
+    // Dehomogenize
+    let w = last_row[3];
+    if w.abs() < 1e-10 {
+        return None;
+    }
+
+    let point = [last_row[0] / w, last_row[1] / w, last_row[2] / w];
+
+    // Compute reprojection error
+    let point_vec = Vector3::new(point[0], point[1], point[2]);
+    let mut total_sq_error = 0.0;
+    let mut count = 0;
+
+    for obs in observations {
+        let cam = &cameras[obs.camera_idx];
+        if let Some((u, v)) = cam.project(&point_vec) {
+            let dx = u - obs.x;
+            let dy = v - obs.y;
+            total_sq_error += dx * dx + dy * dy;
+            count += 1;
+        }
+    }
+
+    let rms_error = if count > 0 {
+        (total_sq_error / count as f64).sqrt()
+    } else {
+        f64::INFINITY
+    };
+
+    Some(TriangulationResult {
+        point,
+        reprojection_error: rms_error,
+        num_observations: observations.len(),
+    })
+}
+
+/// Triangulate a single 3D point from multiple 2D observations.
+///
+/// Input JSON format:
+/// - observations: Array of {camera_idx, x, y}
+/// - cameras: Array of CameraParams
+///
+/// Returns JSON with {point: [x, y, z], reprojection_error, num_observations}
+#[wasm_bindgen]
+pub fn triangulate_point(observations_json: &str, cameras_json: &str) -> Result<String, JsValue> {
+    let observations: Vec<TriangulationObservation> = serde_json::from_str(observations_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse observations: {}", e)))?;
+
+    let cameras: Vec<CameraParams> = serde_json::from_str(cameras_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse cameras: {}", e)))?;
+
+    let result = triangulate_point_dlt(&observations, &cameras)
+        .ok_or_else(|| JsValue::from_str("Triangulation failed: need at least 2 observations"))?;
+
+    serde_json::to_string(&result)
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+}
+
+/// Batch triangulate multiple 3D points from their 2D observations.
+///
+/// Input JSON format:
+/// - point_observations: Array of arrays of {camera_idx, x, y} (one array per point)
+/// - cameras: Array of CameraParams
+///
+/// Returns JSON with BatchTriangulationResult
+#[wasm_bindgen]
+pub fn triangulate_points(
+    point_observations_json: &str,
+    cameras_json: &str,
+) -> Result<String, JsValue> {
+    let point_observations: Vec<Vec<TriangulationObservation>> =
+        serde_json::from_str(point_observations_json)
+            .map_err(|e| JsValue::from_str(&format!("Failed to parse observations: {}", e)))?;
+
+    let cameras: Vec<CameraParams> = serde_json::from_str(cameras_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse cameras: {}", e)))?;
+
+    let mut points = Vec::with_capacity(point_observations.len());
+    let mut reprojection_errors = Vec::with_capacity(point_observations.len());
+    let mut failed_indices = Vec::new();
+
+    for (i, observations) in point_observations.iter().enumerate() {
+        match triangulate_point_dlt(observations, &cameras) {
+            Some(result) => {
+                points.push(result.point);
+                reprojection_errors.push(result.reprojection_error);
+            }
+            None => {
+                // Push placeholder for failed triangulation
+                points.push([f64::NAN, f64::NAN, f64::NAN]);
+                reprojection_errors.push(f64::INFINITY);
+                failed_indices.push(i);
+            }
+        }
+    }
+
+    let num_triangulated = point_observations.len() - failed_indices.len();
+
+    let result = BatchTriangulationResult {
+        points,
+        reprojection_errors,
+        num_triangulated,
+        failed_indices,
+    };
+
+    serde_json::to_string(&result)
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+}
+
+// ============================================================================
+// Reprojection Error API
+// ============================================================================
+
+/// Result of computing reprojection errors.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReprojectionErrorResult {
+    /// Error per observation (in pixels)
+    pub errors: Vec<f64>,
+    /// Mean reprojection error
+    pub mean_error: f64,
+    /// RMS reprojection error
+    pub rms_error: f64,
+    /// Maximum reprojection error
+    pub max_error: f64,
+    /// Projected 2D points (optional, parallel to observations)
+    pub projected_points: Vec<[f64; 2]>,
+}
+
+/// Compute reprojection errors for all observations.
+///
+/// Input JSON format:
+/// - cameras: Array of CameraParams
+/// - points: Array of [x, y, z] 3D points
+/// - observations: Array of {camera_idx, point_idx, x, y}
+///
+/// Returns JSON with ReprojectionErrorResult
+#[wasm_bindgen]
+pub fn compute_reprojection_errors(
+    cameras_json: &str,
+    points_json: &str,
+    observations_json: &str,
+) -> Result<String, JsValue> {
+    let cameras: Vec<CameraParams> = serde_json::from_str(cameras_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse cameras: {}", e)))?;
+
+    let points: Vec<[f64; 3]> = serde_json::from_str(points_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse points: {}", e)))?;
+
+    let observations: Vec<Observation> = serde_json::from_str(observations_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse observations: {}", e)))?;
+
+    let mut errors = Vec::with_capacity(observations.len());
+    let mut projected_points = Vec::with_capacity(observations.len());
+    let mut sum_sq_error = 0.0;
+    let mut max_error = 0.0f64;
+
+    for obs in &observations {
+        if obs.camera_idx >= cameras.len() || obs.point_idx >= points.len() {
+            errors.push(f64::INFINITY);
+            projected_points.push([f64::NAN, f64::NAN]);
+            continue;
+        }
+
+        let cam = &cameras[obs.camera_idx];
+        let pt = &points[obs.point_idx];
+        let point_vec = Vector3::new(pt[0], pt[1], pt[2]);
+
+        match cam.project(&point_vec) {
+            Some((u, v)) => {
+                let dx = u - obs.x;
+                let dy = v - obs.y;
+                let error = (dx * dx + dy * dy).sqrt();
+                errors.push(error);
+                projected_points.push([u, v]);
+                sum_sq_error += error * error;
+                max_error = max_error.max(error);
+            }
+            None => {
+                errors.push(f64::INFINITY);
+                projected_points.push([f64::NAN, f64::NAN]);
+            }
+        }
+    }
+
+    let n = errors.iter().filter(|e| e.is_finite()).count();
+    let mean_error = if n > 0 {
+        errors.iter().filter(|e| e.is_finite()).sum::<f64>() / n as f64
+    } else {
+        f64::NAN
+    };
+    let rms_error = if n > 0 {
+        (sum_sq_error / n as f64).sqrt()
+    } else {
+        f64::NAN
+    };
+
+    let result = ReprojectionErrorResult {
+        errors,
+        mean_error,
+        rms_error,
+        max_error,
+        projected_points,
+    };
+
+    serde_json::to_string(&result)
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+}
+
+/// Project 3D points through a camera to 2D pixel coordinates.
+///
+/// Input JSON format:
+/// - points: Array of [x, y, z] 3D points
+/// - camera: Single CameraParams object
+///
+/// Returns JSON array of [u, v] pixel coordinates (NaN for points behind camera)
+#[wasm_bindgen]
+pub fn project_points(points_json: &str, camera_json: &str) -> Result<String, JsValue> {
+    let points: Vec<[f64; 3]> = serde_json::from_str(points_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse points: {}", e)))?;
+
+    let camera: CameraParams = serde_json::from_str(camera_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse camera: {}", e)))?;
+
+    let mut projected = Vec::with_capacity(points.len());
+
+    for pt in &points {
+        let point_vec = Vector3::new(pt[0], pt[1], pt[2]);
+        match camera.project(&point_vec) {
+            Some((u, v)) => projected.push([u, v]),
+            None => projected.push([f64::NAN, f64::NAN]),
+        }
+    }
+
+    serde_json::to_string(&projected)
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+}
+
+// ============================================================================
+// Point Undistortion API
+// ============================================================================
+
+/// Undistort 2D points (remove lens distortion) using iterative refinement.
+///
+/// This converts distorted pixel coordinates to undistorted normalized coordinates,
+/// then back to undistorted pixel coordinates.
+///
+/// Input JSON format:
+/// - points: Array of [u, v] distorted pixel coordinates
+/// - camera: Single CameraParams object
+///
+/// Returns JSON array of [u, v] undistorted pixel coordinates
+#[wasm_bindgen]
+pub fn undistort_points(points_json: &str, camera_json: &str) -> Result<String, JsValue> {
+    let points: Vec<[f64; 2]> = serde_json::from_str(points_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse points: {}", e)))?;
+
+    let camera: CameraParams = serde_json::from_str(camera_json)
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse camera: {}", e)))?;
+
+    let fx = camera.focal[0];
+    let fy = camera.focal[1];
+    let cx = camera.principal[0];
+    let cy = camera.principal[1];
+    let k1 = camera.distortion[0];
+    let k2 = camera.distortion[1];
+    let p1 = camera.distortion[2];
+    let p2 = camera.distortion[3];
+    let k3 = camera.distortion[4];
+
+    let mut undistorted = Vec::with_capacity(points.len());
+    const MAX_ITER: usize = 20;
+    const TOL: f64 = 1e-10;
+
+    for pt in &points {
+        let u_dist = pt[0];
+        let v_dist = pt[1];
+
+        // Initial guess: normalized coordinates without distortion
+        let mut x = (u_dist - cx) / fx;
+        let mut y = (v_dist - cy) / fy;
+
+        // Iterative refinement (fixed-point iteration)
+        for _ in 0..MAX_ITER {
+            let r2 = x * x + y * y;
+            let r4 = r2 * r2;
+            let r6 = r4 * r2;
+
+            let radial = 1.0 + k1 * r2 + k2 * r4 + k3 * r6;
+            let dx_tang = 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x);
+            let dy_tang = p1 * (r2 + 2.0 * y * y) + 2.0 * p2 * x * y;
+
+            let x_dist = x * radial + dx_tang;
+            let y_dist = y * radial + dy_tang;
+
+            // Target normalized distorted coordinates
+            let x_target = (u_dist - cx) / fx;
+            let y_target = (v_dist - cy) / fy;
+
+            // Update estimate
+            let x_new = x + (x_target - x_dist);
+            let y_new = y + (y_target - y_dist);
+
+            // Check convergence
+            let dx = x_new - x;
+            let dy = y_new - y;
+            if dx * dx + dy * dy < TOL {
+                x = x_new;
+                y = y_new;
+                break;
+            }
+
+            x = x_new;
+            y = y_new;
+        }
+
+        // Convert back to pixel coordinates (undistorted)
+        let u_undist = fx * x + cx;
+        let v_undist = fy * y + cy;
+
+        undistorted.push([u_undist, v_undist]);
+    }
+
+    serde_json::to_string(&undistorted)
+        .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -1239,5 +1684,252 @@ mod tests {
         assert_eq!(ba.num_cameras(), 0);
         assert_eq!(ba.num_points(), 0);
         assert_eq!(ba.num_observations(), 0);
+    }
+
+    // Helper to create a simple camera at origin with identity rotation
+    fn make_camera(translation: [f64; 3], rotation: [f64; 4]) -> CameraParams {
+        CameraParams {
+            rotation,
+            translation,
+            focal: [500.0, 500.0],
+            principal: [320.0, 240.0],
+            distortion: [0.0, 0.0, 0.0, 0.0, 0.0],
+        }
+    }
+
+    #[test]
+    fn test_triangulation_two_cameras() {
+        // Two cameras looking at a point
+        // Camera 0 at origin, looking along +Z
+        let cam0 = make_camera([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]);
+
+        // Camera 1 offset to the right by 1 unit
+        let cam1 = make_camera([1.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]);
+
+        let cameras = vec![cam0, cam1];
+
+        // 3D point at (0.5, 0, 5) - in front of both cameras
+        let true_point = Vector3::new(0.5, 0.0, 5.0);
+
+        // Project to get observations
+        let (u0, v0) = cameras[0].project(&true_point).unwrap();
+        let (u1, v1) = cameras[1].project(&true_point).unwrap();
+
+        let observations = vec![
+            TriangulationObservation { camera_idx: 0, x: u0, y: v0 },
+            TriangulationObservation { camera_idx: 1, x: u1, y: v1 },
+        ];
+
+        let result = triangulate_point_dlt(&observations, &cameras).unwrap();
+
+        // Check triangulated point is close to true point
+        assert!((result.point[0] - 0.5).abs() < 0.01, "X mismatch: {}", result.point[0]);
+        assert!((result.point[1] - 0.0).abs() < 0.01, "Y mismatch: {}", result.point[1]);
+        assert!((result.point[2] - 5.0).abs() < 0.01, "Z mismatch: {}", result.point[2]);
+
+        // Reprojection error should be very small
+        assert!(result.reprojection_error < 0.1, "Error too large: {}", result.reprojection_error);
+    }
+
+    #[test]
+    fn test_triangulation_insufficient_observations() {
+        let cam = make_camera([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]);
+        let cameras = vec![cam];
+
+        // Only one observation - should fail
+        let observations = vec![
+            TriangulationObservation { camera_idx: 0, x: 320.0, y: 240.0 },
+        ];
+
+        let result = triangulate_point_dlt(&observations, &cameras);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_camera_projection() {
+        let cam = make_camera([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]);
+
+        // Point at (0, 0, 5) should project to principal point
+        let point = Vector3::new(0.0, 0.0, 5.0);
+        let (u, v) = cam.project(&point).unwrap();
+
+        assert!((u - 320.0).abs() < 1e-6);
+        assert!((v - 240.0).abs() < 1e-6);
+
+        // Point at (1, 0, 5) should project to the right of principal point
+        let point2 = Vector3::new(1.0, 0.0, 5.0);
+        let (u2, v2) = cam.project(&point2).unwrap();
+
+        assert!(u2 > 320.0); // Should be to the right
+        assert!((v2 - 240.0).abs() < 1e-6); // Same vertical position
+
+        // Point behind camera should return None
+        let behind = Vector3::new(0.0, 0.0, -1.0);
+        assert!(cam.project(&behind).is_none());
+    }
+
+    #[test]
+    fn test_reprojection_error_computation() {
+        let cam = make_camera([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]);
+        let point = Vector3::new(0.0, 0.0, 5.0);
+
+        // Perfect observation - error should be 0
+        let (u, v) = cam.project(&point).unwrap();
+        let error = cam.reprojection_error(&point, (u, v)).unwrap();
+        assert!(error < 1e-10);
+
+        // Observation with offset - error should be the offset magnitude
+        let error_with_offset = cam.reprojection_error(&point, (u + 3.0, v + 4.0)).unwrap();
+        assert!((error_with_offset - 5.0).abs() < 1e-6); // sqrt(3^2 + 4^2) = 5
+    }
+
+    #[test]
+    fn test_undistortion_no_distortion() {
+        // With zero distortion, undistort should be identity
+        let cam = make_camera([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]);
+
+        let points = vec![[320.0, 240.0], [400.0, 300.0], [200.0, 150.0]];
+        let points_json = serde_json::to_string(&points).unwrap();
+        let camera_json = serde_json::to_string(&cam).unwrap();
+
+        let result_json = undistort_points(&points_json, &camera_json).unwrap();
+        let result: Vec<[f64; 2]> = serde_json::from_str(&result_json).unwrap();
+
+        for (orig, undist) in points.iter().zip(result.iter()) {
+            assert!((orig[0] - undist[0]).abs() < 1e-6);
+            assert!((orig[1] - undist[1]).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_undistortion_with_distortion() {
+        // Camera with some radial distortion
+        let mut cam = make_camera([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]);
+        cam.distortion = [0.1, -0.05, 0.0, 0.0, 0.0]; // k1, k2
+
+        // Start with undistorted normalized coords, distort them, then undistort
+        let x_undist = 0.2;
+        let y_undist = 0.1;
+
+        // Apply distortion manually
+        let r2 = x_undist * x_undist + y_undist * y_undist;
+        let r4 = r2 * r2;
+        let radial = 1.0 + cam.distortion[0] * r2 + cam.distortion[1] * r4;
+        let x_dist = x_undist * radial;
+        let y_dist = y_undist * radial;
+
+        // Convert to pixel coords
+        let u_dist = cam.focal[0] * x_dist + cam.principal[0];
+        let v_dist = cam.focal[1] * y_dist + cam.principal[1];
+
+        // Now undistort
+        let points = vec![[u_dist, v_dist]];
+        let points_json = serde_json::to_string(&points).unwrap();
+        let camera_json = serde_json::to_string(&cam).unwrap();
+
+        let result_json = undistort_points(&points_json, &camera_json).unwrap();
+        let result: Vec<[f64; 2]> = serde_json::from_str(&result_json).unwrap();
+
+        // Expected undistorted pixel coords
+        let u_undist_expected = cam.focal[0] * x_undist + cam.principal[0];
+        let v_undist_expected = cam.focal[1] * y_undist + cam.principal[1];
+
+        assert!((result[0][0] - u_undist_expected).abs() < 0.01,
+            "U mismatch: {} vs {}", result[0][0], u_undist_expected);
+        assert!((result[0][1] - v_undist_expected).abs() < 0.01,
+            "V mismatch: {} vs {}", result[0][1], v_undist_expected);
+    }
+
+    #[test]
+    fn test_project_points_wasm() {
+        let cam = make_camera([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]);
+        let points = vec![[0.0, 0.0, 5.0], [1.0, 0.0, 5.0], [0.0, 1.0, 5.0]];
+
+        let points_json = serde_json::to_string(&points).unwrap();
+        let camera_json = serde_json::to_string(&cam).unwrap();
+
+        let result_json = project_points(&points_json, &camera_json).unwrap();
+        let result: Vec<[f64; 2]> = serde_json::from_str(&result_json).unwrap();
+
+        assert_eq!(result.len(), 3);
+
+        // First point at origin projects to principal point
+        assert!((result[0][0] - 320.0).abs() < 1e-6);
+        assert!((result[0][1] - 240.0).abs() < 1e-6);
+
+        // Second point is to the right
+        assert!(result[1][0] > 320.0);
+
+        // Third point is below (positive Y in camera goes down in image)
+        assert!(result[2][1] > 240.0);
+    }
+
+    #[test]
+    fn test_batch_triangulation() {
+        let cam0 = make_camera([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]);
+        let cam1 = make_camera([1.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]);
+        let cameras = vec![cam0.clone(), cam1.clone()];
+        let cameras_json = serde_json::to_string(&cameras).unwrap();
+
+        // Two points to triangulate
+        let point1 = Vector3::new(0.5, 0.0, 5.0);
+        let point2 = Vector3::new(0.0, 0.5, 3.0);
+
+        let (u10, v10) = cam0.project(&point1).unwrap();
+        let (u11, v11) = cam1.project(&point1).unwrap();
+        let (u20, v20) = cam0.project(&point2).unwrap();
+        let (u21, v21) = cam1.project(&point2).unwrap();
+
+        let point_observations = vec![
+            vec![
+                TriangulationObservation { camera_idx: 0, x: u10, y: v10 },
+                TriangulationObservation { camera_idx: 1, x: u11, y: v11 },
+            ],
+            vec![
+                TriangulationObservation { camera_idx: 0, x: u20, y: v20 },
+                TriangulationObservation { camera_idx: 1, x: u21, y: v21 },
+            ],
+        ];
+
+        let obs_json = serde_json::to_string(&point_observations).unwrap();
+        let result_json = triangulate_points(&obs_json, &cameras_json).unwrap();
+        let result: BatchTriangulationResult = serde_json::from_str(&result_json).unwrap();
+
+        assert_eq!(result.num_triangulated, 2);
+        assert!(result.failed_indices.is_empty());
+
+        // Check first point
+        assert!((result.points[0][0] - 0.5).abs() < 0.01);
+        assert!((result.points[0][2] - 5.0).abs() < 0.01);
+
+        // Check second point
+        assert!((result.points[1][1] - 0.5).abs() < 0.01);
+        assert!((result.points[1][2] - 3.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_reprojection_errors_wasm() {
+        let cam = make_camera([0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]);
+        let cameras = vec![cam];
+        let points = vec![[0.0, 0.0, 5.0]];
+
+        // Perfect observation
+        let observations = vec![Observation {
+            camera_idx: 0,
+            point_idx: 0,
+            x: 320.0,
+            y: 240.0,
+        }];
+
+        let cameras_json = serde_json::to_string(&cameras).unwrap();
+        let points_json = serde_json::to_string(&points).unwrap();
+        let obs_json = serde_json::to_string(&observations).unwrap();
+
+        let result_json = compute_reprojection_errors(&cameras_json, &points_json, &obs_json).unwrap();
+        let result: ReprojectionErrorResult = serde_json::from_str(&result_json).unwrap();
+
+        assert_eq!(result.errors.len(), 1);
+        assert!(result.errors[0] < 1e-6);
+        assert!(result.rms_error < 1e-6);
     }
 }

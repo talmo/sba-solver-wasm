@@ -4,26 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>sba-solver-wasm Demo</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        * {
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
             background: #f5f5f5;
         }
-        h1 {
-            color: #333;
-            border-bottom: 2px solid #007acc;
-            padding-bottom: 10px;
-        }
-        h2 {
-            color: #555;
-            margin-top: 30px;
-        }
+        h1 { color: #333; border-bottom: 2px solid #007acc; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        h3 { color: #666; margin-top: 20px; }
         .section {
             background: white;
             border-radius: 8px;
@@ -31,19 +24,11 @@
             margin: 20px 0;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-        @media (max-width: 800px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
-        }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
         textarea {
             width: 100%;
-            height: 200px;
+            height: 150px;
             font-family: 'Monaco', 'Consolas', monospace;
             font-size: 12px;
             padding: 10px;
@@ -55,374 +40,550 @@
             background: #007acc;
             color: white;
             border: none;
-            padding: 12px 24px;
-            font-size: 16px;
+            padding: 10px 20px;
+            font-size: 14px;
             border-radius: 4px;
             cursor: pointer;
-            margin: 10px 5px 10px 0;
+            margin: 5px 5px 5px 0;
         }
-        button:hover {
-            background: #005a9e;
-        }
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-        button.secondary {
-            background: #6c757d;
-        }
-        button.secondary:hover {
-            background: #545b62;
-        }
-        #status {
-            padding: 10px;
-            border-radius: 4px;
-            margin: 10px 0;
-        }
-        #status.loading {
-            background: #fff3cd;
-            color: #856404;
-        }
-        #status.success {
-            background: #d4edda;
-            color: #155724;
-        }
-        #status.error {
-            background: #f8d7da;
-            color: #721c24;
-        }
-        #result {
+        button:hover { background: #005a9e; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        button.secondary { background: #6c757d; }
+        button.secondary:hover { background: #545b62; }
+        #status { padding: 10px; border-radius: 4px; margin: 10px 0; }
+        #status.loading { background: #fff3cd; color: #856404; }
+        #status.success { background: #d4edda; color: #155724; }
+        #status.error { background: #f8d7da; color: #721c24; }
+        .result-box {
             background: #f8f9fa;
             border: 1px solid #ddd;
             border-radius: 4px;
             padding: 15px;
             white-space: pre-wrap;
             font-family: 'Monaco', 'Consolas', monospace;
-            font-size: 12px;
-            max-height: 400px;
+            font-size: 11px;
+            max-height: 300px;
             overflow: auto;
         }
-        .stats {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            margin: 15px 0;
-        }
-        .stat {
-            background: #e9ecef;
-            padding: 10px 15px;
-            border-radius: 4px;
-        }
-        .stat-label {
-            font-size: 12px;
-            color: #666;
-        }
-        .stat-value {
-            font-size: 18px;
-            font-weight: bold;
-            color: #333;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            color: #555;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        input[type="number"] {
+        .stats { display: flex; gap: 15px; flex-wrap: wrap; margin: 15px 0; }
+        .stat { background: #e9ecef; padding: 10px 15px; border-radius: 4px; }
+        .stat-label { font-size: 11px; color: #666; }
+        .stat-value { font-size: 16px; font-weight: bold; color: #333; }
+        label { display: block; margin-bottom: 5px; font-weight: 500; color: #555; }
+        .form-group { margin-bottom: 15px; }
+        input[type="number"], select {
             width: 100%;
             padding: 8px;
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 14px;
         }
+        .tab-buttons { display: flex; gap: 5px; margin-bottom: 15px; }
+        .tab-buttons button { background: #e9ecef; color: #333; }
+        .tab-buttons button.active { background: #007acc; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        #costChart { max-height: 250px; }
+        code { background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
     </style>
 </head>
 <body>
     <h1>sba-solver-wasm Demo</h1>
-    <p>Browser-based sparse bundle adjustment using WebAssembly</p>
+    <p>Browser-based sparse bundle adjustment, triangulation, and camera utilities using WebAssembly.</p>
 
     <div id="status" class="loading">Loading WASM module...</div>
 
-    <div class="section">
-        <h2>Quick Test</h2>
-        <p>Run a simple bundle adjustment with synthetic data (2 cameras, 8 3D points).</p>
-        <button id="runTest" disabled>Run Test Optimization</button>
-        <button id="loadExample" class="secondary" disabled>Load Example Data</button>
+    <!-- Tab Navigation -->
+    <div class="tab-buttons">
+        <button class="active" data-tab="bundle-adjustment">Bundle Adjustment</button>
+        <button data-tab="triangulation">Triangulation</button>
+        <button data-tab="reprojection">Reprojection</button>
+        <button data-tab="undistortion">Undistortion</button>
+        <button data-tab="wrapper-api">Wrapper API</button>
     </div>
 
-    <div class="section">
-        <h2>Solver Configuration</h2>
-        <div class="grid">
-            <div class="form-group">
-                <label for="maxIterations">Max Iterations</label>
-                <input type="number" id="maxIterations" value="100" min="1" max="1000">
+    <!-- Bundle Adjustment Tab -->
+    <div id="bundle-adjustment" class="tab-content active">
+        <div class="section">
+            <h2>Bundle Adjustment</h2>
+            <p>Optimize camera poses and 3D points to minimize reprojection error.</p>
+
+            <h3>Quick Test</h3>
+            <button id="runTest" disabled>Run Test (2 cameras, 8 points)</button>
+            <button id="loadExample" class="secondary" disabled>Load Example Data</button>
+
+            <h3>Configuration</h3>
+            <div class="grid">
+                <div class="form-group">
+                    <label>Max Iterations</label>
+                    <input type="number" id="maxIterations" value="100" min="1" max="1000">
+                </div>
+                <div class="form-group">
+                    <label>Robust Loss</label>
+                    <select id="robustLoss">
+                        <option value="huber">Huber</option>
+                        <option value="cauchy">Cauchy</option>
+                        <option value="none">None</option>
+                    </select>
+                </div>
             </div>
-            <div class="form-group">
-                <label for="costTolerance">Cost Tolerance</label>
-                <input type="number" id="costTolerance" value="1e-6" step="1e-7">
+
+            <h3>Input Data</h3>
+            <div class="grid">
+                <div>
+                    <label>Cameras (JSON)</label>
+                    <textarea id="camerasInput" placeholder="Paste cameras JSON..."></textarea>
+                </div>
+                <div>
+                    <label>3D Points (JSON)</label>
+                    <textarea id="pointsInput" placeholder="Paste points JSON..."></textarea>
+                </div>
             </div>
-            <div class="form-group">
-                <label for="robustLoss">Robust Loss</label>
-                <select id="robustLoss" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px;">
-                    <option value="huber">Huber</option>
-                    <option value="cauchy">Cauchy</option>
-                    <option value="none">None</option>
-                </select>
+            <label>Observations (JSON)</label>
+            <textarea id="observationsInput" placeholder="Paste observations JSON..."></textarea>
+            <button id="runCustom" disabled>Run Custom Optimization</button>
+
+            <h3>Results</h3>
+            <div class="stats" id="baStats" style="display: none;">
+                <div class="stat"><div class="stat-label">Initial Cost</div><div class="stat-value" id="initialCost">-</div></div>
+                <div class="stat"><div class="stat-label">Final Cost</div><div class="stat-value" id="finalCost">-</div></div>
+                <div class="stat"><div class="stat-label">Iterations</div><div class="stat-value" id="iterations">-</div></div>
+                <div class="stat"><div class="stat-label">Converged</div><div class="stat-value" id="converged">-</div></div>
+                <div class="stat"><div class="stat-label">Time</div><div class="stat-value" id="time">-</div></div>
             </div>
-            <div class="form-group">
-                <label for="robustLossParam">Robust Loss Parameter</label>
-                <input type="number" id="robustLossParam" value="1.0" step="0.1">
+            <div class="grid">
+                <div>
+                    <label>Cost History</label>
+                    <canvas id="costChart"></canvas>
+                </div>
+                <div>
+                    <label>Result JSON</label>
+                    <div id="baResult" class="result-box">Run optimization to see results.</div>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="section">
-        <h2>Input Data</h2>
-        <div class="grid">
-            <div>
-                <label for="camerasInput">Cameras (JSON)</label>
-                <textarea id="camerasInput" placeholder="Paste cameras JSON here..."></textarea>
+    <!-- Triangulation Tab -->
+    <div id="triangulation" class="tab-content">
+        <div class="section">
+            <h2>Triangulation</h2>
+            <p>Reconstruct 3D points from 2D observations using DLT algorithm.</p>
+
+            <button id="runTriangulationTest" disabled>Run Test</button>
+
+            <div class="grid">
+                <div>
+                    <label>Cameras (JSON)</label>
+                    <textarea id="triCamerasInput" placeholder="Paste cameras JSON..."></textarea>
+                </div>
+                <div>
+                    <label>Observations per Point (JSON)</label>
+                    <textarea id="triObservationsInput" placeholder='[[{camera_idx: 0, x: 320, y: 240}, ...], ...]'></textarea>
+                </div>
             </div>
-            <div>
-                <label for="pointsInput">3D Points (JSON)</label>
-                <textarea id="pointsInput" placeholder="Paste points JSON here..."></textarea>
-            </div>
+            <button id="runTriangulation" disabled>Triangulate Points</button>
+
+            <h3>Results</h3>
+            <div id="triResult" class="result-box">Run triangulation to see results.</div>
         </div>
-        <div>
-            <label for="observationsInput">Observations (JSON)</label>
-            <textarea id="observationsInput" placeholder="Paste observations JSON here..."></textarea>
-        </div>
-        <button id="runCustom" disabled>Run Custom Optimization</button>
     </div>
 
-    <div class="section">
-        <h2>Results</h2>
-        <div class="stats" id="stats" style="display: none;">
-            <div class="stat">
-                <div class="stat-label">Initial Cost</div>
-                <div class="stat-value" id="initialCost">-</div>
+    <!-- Reprojection Tab -->
+    <div id="reprojection" class="tab-content">
+        <div class="section">
+            <h2>Reprojection & Projection</h2>
+            <p>Compute reprojection errors or project 3D points through cameras.</p>
+
+            <button id="runReprojectionTest" disabled>Run Test</button>
+
+            <h3>Project Points</h3>
+            <div class="grid">
+                <div>
+                    <label>3D Points (JSON)</label>
+                    <textarea id="projPointsInput" placeholder='[[0, 0, 5], [1, 0, 5], ...]'></textarea>
+                </div>
+                <div>
+                    <label>Camera (JSON)</label>
+                    <textarea id="projCameraInput" placeholder="Single camera object..."></textarea>
+                </div>
             </div>
-            <div class="stat">
-                <div class="stat-label">Final Cost</div>
-                <div class="stat-value" id="finalCost">-</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Iterations</div>
-                <div class="stat-value" id="iterations">-</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Converged</div>
-                <div class="stat-value" id="converged">-</div>
-            </div>
-            <div class="stat">
-                <div class="stat-label">Time</div>
-                <div class="stat-value" id="time">-</div>
-            </div>
+            <button id="runProjection" disabled>Project Points</button>
+
+            <h3>Results</h3>
+            <div id="projResult" class="result-box">Run projection to see results.</div>
         </div>
-        <label for="result">Full Result (JSON)</label>
-        <div id="result">No results yet. Run an optimization to see results.</div>
+    </div>
+
+    <!-- Undistortion Tab -->
+    <div id="undistortion" class="tab-content">
+        <div class="section">
+            <h2>Point Undistortion</h2>
+            <p>Remove lens distortion from 2D pixel coordinates.</p>
+
+            <button id="runUndistortTest" disabled>Run Test</button>
+
+            <div class="grid">
+                <div>
+                    <label>Distorted Points (JSON)</label>
+                    <textarea id="undistPointsInput" placeholder='[[320, 240], [400, 300], ...]'></textarea>
+                </div>
+                <div>
+                    <label>Camera (JSON)</label>
+                    <textarea id="undistCameraInput" placeholder="Camera with distortion coefficients..."></textarea>
+                </div>
+            </div>
+            <button id="runUndistort" disabled>Undistort Points</button>
+
+            <h3>Results</h3>
+            <div id="undistResult" class="result-box">Run undistortion to see results.</div>
+        </div>
+    </div>
+
+    <!-- Wrapper API Tab -->
+    <div id="wrapper-api" class="tab-content">
+        <div class="section">
+            <h2>Wrapper API Usage</h2>
+            <p>The wrapper module provides a cleaner, higher-level API.</p>
+
+            <h3>Installation</h3>
+            <div class="result-box">npm install @talmolab/sba-solver-wasm</div>
+
+            <h3>Bundle Adjustment</h3>
+            <div class="result-box">import { initSBA, runBundleAdjustment } from '@talmolab/sba-solver-wasm/wrapper';
+
+await initSBA();
+
+const result = await runBundleAdjustment({
+    cameras: [...],
+    points: [...],
+    observations: [...]
+}, {
+    max_iterations: 100,
+    robust_loss: 'huber'
+});
+
+console.log(`Cost: ${result.initial_cost} -> ${result.final_cost}`);</div>
+
+            <h3>Triangulation</h3>
+            <div class="result-box">import { triangulatePoint, triangulatePoints } from '@talmolab/sba-solver-wasm/wrapper';
+
+// Single point
+const result = await triangulatePoint([
+    { camera_idx: 0, x: 320, y: 240 },
+    { camera_idx: 1, x: 340, y: 245 }
+], cameras);
+
+// Batch
+const batch = await triangulatePoints(pointObservations, cameras);</div>
+
+            <h3>Reprojection Errors</h3>
+            <div class="result-box">import { computeReprojectionErrors, projectPoints } from '@talmolab/sba-solver-wasm/wrapper';
+
+const errors = await computeReprojectionErrors(cameras, points, observations);
+console.log(`RMS: ${errors.rms_error} px`);
+
+const projected = await projectPoints(points3d, camera);</div>
+
+            <h3>Undistortion</h3>
+            <div class="result-box">import { undistortPoints } from '@talmolab/sba-solver-wasm/wrapper';
+
+const undistorted = await undistortPoints([[320, 240], [400, 300]], camera);</div>
+
+            <h3>Utility Functions</h3>
+            <div class="result-box">import {
+    projectPoint,           // JS-only, no WASM call
+    computeReprojectionError,
+    computeErrorStats,
+    rotationMatrixToQuaternion,
+    quaternionToRotationMatrix
+} from '@talmolab/sba-solver-wasm/wrapper';</div>
+        </div>
     </div>
 
     <script type="module">
-        import init, { WasmBundleAdjuster } from '../pkg/sba_solver_wasm.js';
+        // Import both raw WASM and wrapper
+        import init, {
+            WasmBundleAdjuster,
+            triangulate_point,
+            triangulate_points,
+            compute_reprojection_errors,
+            project_points,
+            undistort_points
+        } from '../pkg/sba_solver_wasm.js';
 
         let ba = null;
+        let costChart = null;
 
-        // Generate synthetic test data
-        function generateTestData() {
-            // Two cameras looking at a cube of points
+        // Tab switching
+        document.querySelectorAll('.tab-buttons button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-buttons button').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Generate test cameras
+        function makeCamera(translation, rotation) {
+            return {
+                rotation: rotation || [1.0, 0.0, 0.0, 0.0],
+                translation: translation || [0.0, 0.0, 0.0],
+                focal: [500.0, 500.0],
+                principal: [320.0, 240.0],
+                distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
+            };
+        }
+
+        // Quaternion rotation helper
+        function rotatePoint(q, p) {
+            const [w, x, y, z] = q;
+            const [px, py, pz] = p;
+            const tx = 2 * (y * pz - z * py);
+            const ty = 2 * (z * px - x * pz);
+            const tz = 2 * (x * py - y * px);
+            return [
+                px + w * tx + (y * tz - z * ty),
+                py + w * ty + (z * tx - x * tz),
+                pz + w * tz + (x * ty - y * tx)
+            ];
+        }
+
+        // Project point through camera
+        function projectPoint(pt, cam) {
+            const rotated = rotatePoint(cam.rotation, pt);
+            const camPt = [
+                rotated[0] + cam.translation[0],
+                rotated[1] + cam.translation[1],
+                rotated[2] + cam.translation[2]
+            ];
+            if (camPt[2] <= 0) return null;
+            const u = cam.focal[0] * (camPt[0] / camPt[2]) + cam.principal[0];
+            const v = cam.focal[1] * (camPt[1] / camPt[2]) + cam.principal[1];
+            return [u, v];
+        }
+
+        // Generate synthetic BA test data
+        function generateBATestData() {
             const cameras = [
-                {
-                    // Camera 0: at origin, looking along +Z
-                    rotation: [1.0, 0.0, 0.0, 0.0], // identity quaternion [w,x,y,z]
-                    translation: [0.0, 0.0, 0.0],
-                    focal: [500.0, 500.0],
-                    principal: [320.0, 240.0],
-                    distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
-                },
-                {
-                    // Camera 1: translated to the right, slight rotation
-                    rotation: [0.9962, 0.0, 0.0872, 0.0], // ~10 deg rotation around Y
-                    translation: [1.0, 0.0, 0.0],
-                    focal: [500.0, 500.0],
-                    principal: [320.0, 240.0],
-                    distortion: [0.0, 0.0, 0.0, 0.0, 0.0]
-                }
+                makeCamera([0, 0, 0], [1, 0, 0, 0]),
+                makeCamera([1, 0, 0], [0.9962, 0, 0.0872, 0])
             ];
-
-            // 8 points forming a cube at z=5
-            const points = [
-                [-0.5, -0.5, 5.0],
-                [ 0.5, -0.5, 5.0],
-                [ 0.5,  0.5, 5.0],
-                [-0.5,  0.5, 5.0],
-                [-0.5, -0.5, 6.0],
-                [ 0.5, -0.5, 6.0],
-                [ 0.5,  0.5, 6.0],
-                [-0.5,  0.5, 6.0]
+            const truePoints = [
+                [-0.5, -0.5, 5], [0.5, -0.5, 5], [0.5, 0.5, 5], [-0.5, 0.5, 5],
+                [-0.5, -0.5, 6], [0.5, -0.5, 6], [0.5, 0.5, 6], [-0.5, 0.5, 6]
             ];
-
-            // Generate observations by projecting points through cameras
             const observations = [];
-
-            for (let camIdx = 0; camIdx < cameras.length; camIdx++) {
-                const cam = cameras[camIdx];
-                const q = cam.rotation;
-                const t = cam.translation;
-
-                // Convert quaternion to rotation matrix (simplified for small rotations)
-                const qw = q[0], qx = q[1], qy = q[2], qz = q[3];
-
-                for (let ptIdx = 0; ptIdx < points.length; ptIdx++) {
-                    const pt = points[ptIdx];
-
-                    // Transform point to camera coordinates (R * p + t)
-                    // Using quaternion rotation
-                    const px = pt[0], py = pt[1], pz = pt[2];
-
-                    // Quaternion rotation: q * p * q^(-1)
-                    // For unit quaternion: R = [[1-2(qy²+qz²), 2(qxqy-qzqw), 2(qxqz+qyqw)],
-                    //                          [2(qxqy+qzqw), 1-2(qx²+qz²), 2(qyqz-qxqw)],
-                    //                          [2(qxqz-qyqw), 2(qyqz+qxqw), 1-2(qx²+qy²)]]
-                    const r00 = 1 - 2*(qy*qy + qz*qz);
-                    const r01 = 2*(qx*qy - qz*qw);
-                    const r02 = 2*(qx*qz + qy*qw);
-                    const r10 = 2*(qx*qy + qz*qw);
-                    const r11 = 1 - 2*(qx*qx + qz*qz);
-                    const r12 = 2*(qy*qz - qx*qw);
-                    const r20 = 2*(qx*qz - qy*qw);
-                    const r21 = 2*(qy*qz + qx*qw);
-                    const r22 = 1 - 2*(qx*qx + qy*qy);
-
-                    const camX = r00*px + r01*py + r02*pz + t[0];
-                    const camY = r10*px + r11*py + r12*pz + t[1];
-                    const camZ = r20*px + r21*py + r22*pz + t[2];
-
-                    // Project to image
-                    const u = cam.focal[0] * (camX / camZ) + cam.principal[0];
-                    const v = cam.focal[1] * (camY / camZ) + cam.principal[1];
-
-                    // Add small noise to simulate real observations
-                    const noise = 0.5;
-                    observations.push({
-                        camera_idx: camIdx,
-                        point_idx: ptIdx,
-                        x: u + (Math.random() - 0.5) * noise,
-                        y: v + (Math.random() - 0.5) * noise
-                    });
-                }
-            }
-
-            // Add noise to initial point estimates (what we'll optimize)
-            const noisyPoints = points.map(pt => [
+            cameras.forEach((cam, camIdx) => {
+                truePoints.forEach((pt, ptIdx) => {
+                    const proj = projectPoint(pt, cam);
+                    if (proj) {
+                        observations.push({
+                            camera_idx: camIdx,
+                            point_idx: ptIdx,
+                            x: proj[0] + (Math.random() - 0.5) * 0.5,
+                            y: proj[1] + (Math.random() - 0.5) * 0.5
+                        });
+                    }
+                });
+            });
+            const noisyPoints = truePoints.map(pt => [
                 pt[0] + (Math.random() - 0.5) * 0.2,
                 pt[1] + (Math.random() - 0.5) * 0.2,
                 pt[2] + (Math.random() - 0.5) * 0.2
             ]);
-
             return { cameras, points: noisyPoints, observations };
         }
 
-        function getConfig() {
-            return {
-                max_iterations: parseInt(document.getElementById('maxIterations').value),
-                cost_tolerance: parseFloat(document.getElementById('costTolerance').value),
-                parameter_tolerance: 1e-8,
-                gradient_tolerance: 1e-10,
-                robust_loss: document.getElementById('robustLoss').value,
-                robust_loss_param: parseFloat(document.getElementById('robustLossParam').value),
-                optimize_extrinsics: true,
-                optimize_points: true
-            };
+        function setStatus(msg, type) {
+            const el = document.getElementById('status');
+            el.textContent = msg;
+            el.className = type;
         }
 
-        function setStatus(message, type) {
-            const status = document.getElementById('status');
-            status.textContent = message;
-            status.className = type;
+        function updateCostChart(costHistory) {
+            const ctx = document.getElementById('costChart').getContext('2d');
+            if (costChart) costChart.destroy();
+            costChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: costHistory.map((_, i) => i),
+                    datasets: [{
+                        label: 'Cost',
+                        data: costHistory,
+                        borderColor: '#007acc',
+                        backgroundColor: 'rgba(0, 122, 204, 0.1)',
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { type: 'logarithmic', title: { display: true, text: 'Cost' } },
+                        x: { title: { display: true, text: 'Iteration' } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
         }
 
-        function displayResult(result, elapsed) {
-            const data = JSON.parse(result);
-
-            document.getElementById('stats').style.display = 'flex';
-            document.getElementById('initialCost').textContent = data.initial_cost.toExponential(4);
-            document.getElementById('finalCost').textContent = data.final_cost.toExponential(4);
-            document.getElementById('iterations').textContent = data.iterations;
-            document.getElementById('converged').textContent = data.converged ? 'Yes' : 'No';
-            document.getElementById('time').textContent = elapsed.toFixed(1) + ' ms';
-
-            document.getElementById('result').textContent = JSON.stringify(data, null, 2);
-        }
-
-        async function runOptimization(cameras, points, observations) {
+        async function runBA(cameras, points, observations) {
             try {
                 setStatus('Running optimization...', 'loading');
-
                 ba.set_cameras(JSON.stringify(cameras));
                 ba.set_points(JSON.stringify(points));
                 ba.set_observations(JSON.stringify(observations));
-                ba.set_config(JSON.stringify(getConfig()));
+                ba.set_config(JSON.stringify({
+                    max_iterations: parseInt(document.getElementById('maxIterations').value),
+                    robust_loss: document.getElementById('robustLoss').value,
+                    robust_loss_param: 1.0,
+                    optimize_extrinsics: true,
+                    optimize_points: true
+                }));
 
-                console.log(`Cameras: ${ba.num_cameras()}, Points: ${ba.num_points()}, Observations: ${ba.num_observations()}`);
+                const start = performance.now();
+                const resultJson = ba.optimize();
+                const elapsed = performance.now() - start;
+                const result = JSON.parse(resultJson);
 
-                const startTime = performance.now();
-                const result = ba.optimize();
-                const elapsed = performance.now() - startTime;
+                document.getElementById('baStats').style.display = 'flex';
+                document.getElementById('initialCost').textContent = result.initial_cost.toExponential(3);
+                document.getElementById('finalCost').textContent = result.final_cost.toExponential(3);
+                document.getElementById('iterations').textContent = result.iterations;
+                document.getElementById('converged').textContent = result.converged ? 'Yes' : 'No';
+                document.getElementById('time').textContent = elapsed.toFixed(1) + ' ms';
+                document.getElementById('baResult').textContent = JSON.stringify(result, null, 2);
 
-                displayResult(result, elapsed);
+                if (result.cost_history) updateCostChart(result.cost_history);
                 setStatus('Optimization complete!', 'success');
-
-            } catch (error) {
-                setStatus(`Error: ${error}`, 'error');
-                console.error(error);
+            } catch (e) {
+                setStatus(`Error: ${e}`, 'error');
             }
         }
 
-        // Initialize WASM module
+        // Triangulation test
+        function runTriangulationTest() {
+            const cameras = [
+                makeCamera([0, 0, 0]),
+                makeCamera([1, 0, 0])
+            ];
+            const truePoint = [0.5, 0.2, 5];
+            const obs = cameras.map((cam, i) => {
+                const proj = projectPoint(truePoint, cam);
+                return { camera_idx: i, x: proj[0], y: proj[1] };
+            });
+
+            document.getElementById('triCamerasInput').value = JSON.stringify(cameras, null, 2);
+            document.getElementById('triObservationsInput').value = JSON.stringify([obs], null, 2);
+            runTriangulation();
+        }
+
+        async function runTriangulation() {
+            try {
+                const cameras = JSON.parse(document.getElementById('triCamerasInput').value);
+                const pointObs = JSON.parse(document.getElementById('triObservationsInput').value);
+                const result = JSON.parse(triangulate_points(JSON.stringify(pointObs), JSON.stringify(cameras)));
+                document.getElementById('triResult').textContent = JSON.stringify(result, null, 2);
+                setStatus('Triangulation complete!', 'success');
+            } catch (e) {
+                setStatus(`Error: ${e}`, 'error');
+            }
+        }
+
+        // Projection test
+        function runProjectionTest() {
+            const camera = makeCamera([0, 0, 0]);
+            const points = [[0, 0, 5], [1, 0, 5], [0, 1, 5], [-1, -1, 5]];
+            document.getElementById('projCameraInput').value = JSON.stringify(camera, null, 2);
+            document.getElementById('projPointsInput').value = JSON.stringify(points, null, 2);
+            runProjection();
+        }
+
+        async function runProjection() {
+            try {
+                const points = JSON.parse(document.getElementById('projPointsInput').value);
+                const camera = JSON.parse(document.getElementById('projCameraInput').value);
+                const result = JSON.parse(project_points(JSON.stringify(points), JSON.stringify(camera)));
+                document.getElementById('projResult').textContent = JSON.stringify(result, null, 2);
+                setStatus('Projection complete!', 'success');
+            } catch (e) {
+                setStatus(`Error: ${e}`, 'error');
+            }
+        }
+
+        // Undistortion test
+        function runUndistortTest() {
+            const camera = {
+                ...makeCamera([0, 0, 0]),
+                distortion: [0.1, -0.05, 0.001, 0.001, 0.0]
+            };
+            const points = [[320, 240], [400, 300], [200, 150], [500, 400]];
+            document.getElementById('undistCameraInput').value = JSON.stringify(camera, null, 2);
+            document.getElementById('undistPointsInput').value = JSON.stringify(points, null, 2);
+            runUndistort();
+        }
+
+        async function runUndistort() {
+            try {
+                const points = JSON.parse(document.getElementById('undistPointsInput').value);
+                const camera = JSON.parse(document.getElementById('undistCameraInput').value);
+                const result = JSON.parse(undistort_points(JSON.stringify(points), JSON.stringify(camera)));
+
+                // Show comparison
+                const comparison = points.map((p, i) => ({
+                    distorted: p,
+                    undistorted: result[i],
+                    delta: [result[i][0] - p[0], result[i][1] - p[1]]
+                }));
+                document.getElementById('undistResult').textContent = JSON.stringify(comparison, null, 2);
+                setStatus('Undistortion complete!', 'success');
+            } catch (e) {
+                setStatus(`Error: ${e}`, 'error');
+            }
+        }
+
+        // Initialize
         async function main() {
             try {
                 await init();
                 ba = new WasmBundleAdjuster();
+                setStatus('WASM module loaded!', 'success');
 
-                setStatus('WASM module loaded successfully!', 'success');
-
-                document.getElementById('runTest').disabled = false;
-                document.getElementById('loadExample').disabled = false;
-                document.getElementById('runCustom').disabled = false;
-
-            } catch (error) {
-                setStatus(`Failed to load WASM: ${error}`, 'error');
-                console.error(error);
+                // Enable all buttons
+                document.querySelectorAll('button').forEach(b => b.disabled = false);
+            } catch (e) {
+                setStatus(`Failed to load WASM: ${e}`, 'error');
             }
         }
 
-        // Event handlers
+        // Event listeners
         document.getElementById('runTest').addEventListener('click', () => {
-            const { cameras, points, observations } = generateTestData();
-            runOptimization(cameras, points, observations);
+            const { cameras, points, observations } = generateBATestData();
+            runBA(cameras, points, observations);
         });
-
         document.getElementById('loadExample').addEventListener('click', () => {
-            const { cameras, points, observations } = generateTestData();
+            const { cameras, points, observations } = generateBATestData();
             document.getElementById('camerasInput').value = JSON.stringify(cameras, null, 2);
             document.getElementById('pointsInput').value = JSON.stringify(points, null, 2);
             document.getElementById('observationsInput').value = JSON.stringify(observations, null, 2);
         });
-
         document.getElementById('runCustom').addEventListener('click', () => {
             try {
-                const cameras = JSON.parse(document.getElementById('camerasInput').value);
-                const points = JSON.parse(document.getElementById('pointsInput').value);
-                const observations = JSON.parse(document.getElementById('observationsInput').value);
-                runOptimization(cameras, points, observations);
-            } catch (error) {
-                setStatus(`Invalid JSON input: ${error}`, 'error');
-            }
+                runBA(
+                    JSON.parse(document.getElementById('camerasInput').value),
+                    JSON.parse(document.getElementById('pointsInput').value),
+                    JSON.parse(document.getElementById('observationsInput').value)
+                );
+            } catch (e) { setStatus(`Invalid JSON: ${e}`, 'error'); }
         });
+        document.getElementById('runTriangulationTest').addEventListener('click', runTriangulationTest);
+        document.getElementById('runTriangulation').addEventListener('click', runTriangulation);
+        document.getElementById('runReprojectionTest').addEventListener('click', runProjectionTest);
+        document.getElementById('runProjection').addEventListener('click', runProjection);
+        document.getElementById('runUndistortTest').addEventListener('click', runUndistortTest);
+        document.getElementById('runUndistort').addEventListener('click', runUndistort);
 
         main();
     </script>
