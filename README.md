@@ -264,6 +264,72 @@ y'' = d*y' + 2*p2*x'*y' + p1*(r²+2*y'²)
 u = fx*x'' + cx, v = fy*y'' + cy      # Project to pixels
 ```
 
+## Integration with Other Projects
+
+To use sba-solver-wasm in another project (e.g., calibration-studio):
+
+### 1. Build the WASM module
+
+```bash
+wasm-pack build --target web --release
+```
+
+### 2. Copy the artifacts
+
+```bash
+# Copy WASM module files
+cp pkg/sba_solver_wasm.js /path/to/your/project/lib/
+cp pkg/sba_solver_wasm_bg.wasm /path/to/your/project/lib/
+
+# Optionally copy the JS wrapper for a cleaner API
+cp scratch/2025-12-18-packaging-investigation/sba-wrapper.js /path/to/your/project/lib/
+```
+
+### 3. Update the wrapper (if using sba-wrapper.js)
+
+Edit line 28 in `sba-wrapper.js` to point to the correct location:
+
+```javascript
+// Change from:
+const WASM_MODULE_URL = new URL('../../pkg/apex_solver_wasm.js', import.meta.url);
+// To (if files are in the same directory):
+const WASM_MODULE_URL = new URL('./sba_solver_wasm.js', import.meta.url);
+```
+
+### 4. Use in your code
+
+**With the wrapper (recommended):**
+```javascript
+import { runBundleAdjustment, initSBA } from './lib/sba-wrapper.js';
+
+const result = await runBundleAdjustment({
+    cameras: [...],
+    points: [...],
+    observations: [...],
+    point_to_frame: [...]  // optional
+}, {
+    max_iterations: 100,
+    robust_loss: 'huber',
+    optimize_intrinsics: true,
+    outlier_threshold: 30
+});
+```
+
+**Direct WASM API:**
+```javascript
+import init, { WasmBundleAdjuster } from './lib/sba_solver_wasm.js';
+
+await init();
+const ba = new WasmBundleAdjuster();
+// ... see JavaScript Usage section above
+```
+
+### Bundle Size
+
+- `sba_solver_wasm.js`: ~15KB
+- `sba_solver_wasm_bg.wasm`: ~720KB
+- Total: ~735KB (loads in ~30ms)
+
 ## CI/CD
 
 GitHub Actions workflow (`.github/workflows/test.yml`) runs:
