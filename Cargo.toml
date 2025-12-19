@@ -1,6 +1,6 @@
 [package]
 name = "sba-solver-wasm"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 authors = ["Talmo Pereira"]
 description = "WebAssembly module for sparse bundle adjustment (camera calibration refinement)"
