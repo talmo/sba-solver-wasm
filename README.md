@@ -285,15 +285,13 @@ cp pkg/sba_solver_wasm_bg.wasm /path/to/your/project/lib/
 cp scratch/2025-12-18-packaging-investigation/sba-wrapper.js /path/to/your/project/lib/
 ```
 
-### 3. Update the wrapper (if using sba-wrapper.js)
+### 3. Update the wrapper path (if using sba-wrapper.js)
 
-Edit line 28 in `sba-wrapper.js` to point to the correct location:
+Edit line 28 in `sba-wrapper.js` to point to the correct location relative to where you placed the files:
 
 ```javascript
-// Change from:
-const WASM_MODULE_URL = new URL('../../pkg/apex_solver_wasm.js', import.meta.url);
-// To (if files are in the same directory):
-const WASM_MODULE_URL = new URL('./sba_solver_wasm.js', import.meta.url);
+// If all files are in the same lib/ directory:
+const WASM_MODULE_URL = new URL('./sba_solver_wasm.js', import.meta.url).href;
 ```
 
 ### 4. Use in your code
