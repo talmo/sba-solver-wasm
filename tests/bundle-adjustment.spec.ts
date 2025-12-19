@@ -43,7 +43,7 @@ test.describe('WASM Bundle Adjustment', () => {
     await expect(page.locator('#time')).not.toHaveText('-');
 
     // Check result JSON is populated
-    const resultText = await page.locator('#result').textContent();
+    const resultText = await page.locator('#baResult').textContent();
     expect(resultText).toContain('cameras');
     expect(resultText).toContain('points');
     expect(resultText).toContain('final_cost');
