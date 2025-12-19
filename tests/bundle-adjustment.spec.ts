@@ -10,13 +10,13 @@ test.describe('WASM Bundle Adjustment', () => {
     await expect(page.locator('#status')).not.toContainText('Loading', { timeout: 30000 });
 
     // Should show success message
-    await expect(page.locator('#status')).toContainText('loaded successfully');
+    await expect(page.locator('#status')).toContainText('WASM module loaded');
     await expect(page.locator('#status')).toHaveClass(/success/);
   });
 
   test('run test button is enabled after WASM loads', async ({ page }) => {
     // Wait for WASM to load
-    await expect(page.locator('#status')).toContainText('loaded successfully', { timeout: 30000 });
+    await expect(page.locator('#status')).toContainText('WASM module loaded', { timeout: 30000 });
 
     // Check buttons are enabled
     await expect(page.locator('#runTest')).toBeEnabled();
@@ -26,7 +26,7 @@ test.describe('WASM Bundle Adjustment', () => {
 
   test('runs test optimization and shows results', async ({ page }) => {
     // Wait for WASM to load
-    await expect(page.locator('#status')).toContainText('loaded successfully', { timeout: 30000 });
+    await expect(page.locator('#status')).toContainText('WASM module loaded', { timeout: 30000 });
 
     // Click run test button
     await page.locator('#runTest').click();
@@ -35,7 +35,7 @@ test.describe('WASM Bundle Adjustment', () => {
     await expect(page.locator('#status')).toContainText('complete', { timeout: 30000 });
 
     // Check stats are displayed
-    await expect(page.locator('#stats')).toBeVisible();
+    await expect(page.locator('#baStats')).toBeVisible();
     await expect(page.locator('#initialCost')).not.toHaveText('-');
     await expect(page.locator('#finalCost')).not.toHaveText('-');
     await expect(page.locator('#iterations')).not.toHaveText('-');
@@ -43,7 +43,7 @@ test.describe('WASM Bundle Adjustment', () => {
     await expect(page.locator('#time')).not.toHaveText('-');
 
     // Check result JSON is populated
-    const resultText = await page.locator('#result').textContent();
+    const resultText = await page.locator('#baResult').textContent();
     expect(resultText).toContain('cameras');
     expect(resultText).toContain('points');
     expect(resultText).toContain('final_cost');
@@ -51,7 +51,7 @@ test.describe('WASM Bundle Adjustment', () => {
 
   test('optimization reduces cost', async ({ page }) => {
     // Wait for WASM to load
-    await expect(page.locator('#status')).toContainText('loaded successfully', { timeout: 30000 });
+    await expect(page.locator('#status')).toContainText('WASM module loaded', { timeout: 30000 });
 
     // Run optimization
     await page.locator('#runTest').click();
@@ -70,7 +70,7 @@ test.describe('WASM Bundle Adjustment', () => {
 
   test('optimization converges', async ({ page }) => {
     // Wait for WASM to load
-    await expect(page.locator('#status')).toContainText('loaded successfully', { timeout: 30000 });
+    await expect(page.locator('#status')).toContainText('WASM module loaded', { timeout: 30000 });
 
     // Run optimization
     await page.locator('#runTest').click();
@@ -83,7 +83,7 @@ test.describe('WASM Bundle Adjustment', () => {
 
   test('load example populates input fields', async ({ page }) => {
     // Wait for WASM to load
-    await expect(page.locator('#status')).toContainText('loaded successfully', { timeout: 30000 });
+    await expect(page.locator('#status')).toContainText('WASM module loaded', { timeout: 30000 });
 
     // Click load example
     await page.locator('#loadExample').click();
@@ -105,7 +105,7 @@ test.describe('WASM Bundle Adjustment', () => {
 
   test('custom optimization works with loaded example', async ({ page }) => {
     // Wait for WASM to load
-    await expect(page.locator('#status')).toContainText('loaded successfully', { timeout: 30000 });
+    await expect(page.locator('#status')).toContainText('WASM module loaded', { timeout: 30000 });
 
     // Load example data
     await page.locator('#loadExample').click();
@@ -117,14 +117,14 @@ test.describe('WASM Bundle Adjustment', () => {
     await expect(page.locator('#status')).toContainText('complete', { timeout: 30000 });
 
     // Verify results
-    await expect(page.locator('#stats')).toBeVisible();
+    await expect(page.locator('#baStats')).toBeVisible();
     const convergedText = await page.locator('#converged').textContent();
     expect(convergedText).toBe('Yes');
   });
 
   test('handles invalid JSON gracefully', async ({ page }) => {
     // Wait for WASM to load
-    await expect(page.locator('#status')).toContainText('loaded successfully', { timeout: 30000 });
+    await expect(page.locator('#status')).toContainText('WASM module loaded', { timeout: 30000 });
 
     // Enter invalid JSON
     await page.locator('#camerasInput').fill('not valid json');
@@ -141,7 +141,7 @@ test.describe('WASM Bundle Adjustment', () => {
 
   test('solver configuration affects optimization', async ({ page }) => {
     // Wait for WASM to load
-    await expect(page.locator('#status')).toContainText('loaded successfully', { timeout: 30000 });
+    await expect(page.locator('#status')).toContainText('WASM module loaded', { timeout: 30000 });
 
     // Set max iterations to 1
     await page.locator('#maxIterations').fill('1');
@@ -161,7 +161,7 @@ test.describe('WASM Module API', () => {
     await page.goto('/examples/');
 
     // Wait for WASM to load
-    await expect(page.locator('#status')).toContainText('loaded successfully', { timeout: 30000 });
+    await expect(page.locator('#status')).toContainText('WASM module loaded', { timeout: 30000 });
 
     // Test the API directly via page.evaluate
     const result = await page.evaluate(async () => {
@@ -209,7 +209,7 @@ test.describe('WASM Module API', () => {
     await page.goto('/examples/');
 
     // Wait for WASM to load
-    await expect(page.locator('#status')).toContainText('loaded successfully', { timeout: 30000 });
+    await expect(page.locator('#status')).toContainText('WASM module loaded', { timeout: 30000 });
 
     const result = await page.evaluate(async () => {
       // @ts-ignore
